@@ -1,13 +1,13 @@
-package com.example;
+package alexsuperfly.forcerecolor;
 
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public class ExamplePluginTest
+public class ForceRecolorPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(ExamplePlugin.class);
+		ExternalPluginManager.loadBuiltin(ForceRecolorPlugin.class);
 		RuneLite.main(args);
 	}
 }
