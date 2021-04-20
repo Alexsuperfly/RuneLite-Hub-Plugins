@@ -17,12 +17,14 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.Text;
+import org.apache.commons.lang3.StringUtils;
 
-import java.awt.*;
+import java.awt.Color;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Slf4j
 @PluginDescriptor(
@@ -50,9 +52,10 @@ public class ForceRecolorPlugin extends Plugin
 
 	private static final Pattern TAG_REGEXP_SANS_LT_GT = Pattern.compile("<(?!lt>|gt>)[^>]*>");
 
-	private Pattern textMatcher = null;
-	private String recolorColorTag = "";
 	private int transparencyVarbit = -1;
+	private final Map<Integer, String> textGroupStrings = new HashMap<>();
+	private final Map<Integer, Pattern> matchGroupPatterns = new HashMap<>();
+	private final Map<Integer, String> colorGroupStrings = new HashMap<>();
 
 	@Override
 	protected void startUp() throws Exception
@@ -63,42 +66,51 @@ public class ForceRecolorPlugin extends Plugin
 
 	private void updateMatchingText()
 	{
-		textMatcher = null;
+		textGroupStrings.clear();
+		matchGroupPatterns.clear();
 
 		if (!config.matchedTextString().trim().equals(""))
 		{
 			List<String> items = Text.fromCSV(config.matchedTextString());
-			String joined = items.stream()
-					.map(Text::escapeJagex) // we compare these strings to the raw Jagex ones
-					.map(Pattern::quote)
-					.collect(Collectors.joining("|"));
-			// To match <word> \b doesn't work due to <> not being in \w,
-			// so match \b or \s, as well as \A and \z for beginning and end of input respectively
-			textMatcher = Pattern.compile("(?:\\b|(?<=\\s)|\\A)(?:" + joined + ")(?:\\b|(?=\\s)|\\z)", Pattern.CASE_INSENSITIVE);
+			for (String val : items)
+			{
+				String[] segments = val.split("::");
+				int group = 0;
+				if (segments.length == 2)
+				{
+					group = StringUtils.isNumeric(segments[1]) ? Integer.parseInt(segments[1]) : 0;
+					if (group > 9 || group < 0)
+					{
+						group = 0;
+					}
+				}
+				String matchText = Pattern.quote(Text.escapeJagex(segments[0]));
+				String currentText = textGroupStrings.get(group);
+				String combinedMatchText = currentText != null ? currentText + "|" + matchText : matchText;
+				textGroupStrings.put(group, combinedMatchText);
+			}
+
+			textGroupStrings.forEach((group, text)
+					-> matchGroupPatterns.put(group, Pattern.compile("(?:\\b|(?<=\\s)|\\A)(?:" + text + ")(?:\\b|(?=\\s)|\\z)", Pattern.CASE_INSENSITIVE)));
 		}
 	}
 
 	private void updateRecolorColor()
 	{
+		log.debug("updateRecolorColor");
 		boolean transparent = client.isResized() && transparencyVarbit != 0;
+		String defaultColorString = "";
+
+		colorGroupStrings.clear();
 
 		switch (config.recolorStyle())
 		{
-			case NONE:
-			{
-				recolorColorTag = "";
-				break;
-			}
 			case CHAT_COLOR_CONFIG:
 			{
 				Color chatColorConfigColor = configManager.getConfiguration("textrecolor", transparent ? "transparentGameMessage" : "opaqueGameMessage", Color.class);
 				if (chatColorConfigColor != null)
 				{
-					recolorColorTag = "<col=" + ColorUtil.toHexColor(chatColorConfigColor).substring(1) + ">";
-				}
-				else
-				{
-					recolorColorTag = "";
+					defaultColorString = "<col=" + ColorUtil.toHexColor(chatColorConfigColor).substring(1) + ">";
 				}
 				break;
 			}
@@ -107,14 +119,17 @@ public class ForceRecolorPlugin extends Plugin
 				Color thisConfigColor = transparent ? config.transparentRecolor() : config.opaqueRecolor();
 				if (thisConfigColor != null)
 				{
-					recolorColorTag = "<col=" + ColorUtil.toHexColor(thisConfigColor).substring(1) + ">";
-				}
-				else
-				{
-					recolorColorTag = "";
+					defaultColorString = "<col=" + ColorUtil.toHexColor(thisConfigColor).substring(1) + ">";
 				}
 				break;
 			}
+		}
+		colorGroupStrings.put(0, defaultColorString);
+
+		for (int i = 1; i < 10; i++)
+		{
+			Color color = configManager.getConfiguration("forcerecolor", transparent ? "transparentRecolorGroup" + String.valueOf(i) : "opaqueRecolorGroup" + String.valueOf(i), Color.class);
+			colorGroupStrings.put(i, color != null ? "<col=" + ColorUtil.toHexColor(color).substring(1) + ">" : "");
 		}
 	}
 
@@ -148,23 +163,24 @@ public class ForceRecolorPlugin extends Plugin
 	@Subscribe
 	public void onChatMessage(ChatMessage chatMessage)
 	{
-		MessageNode messageNode = chatMessage.getMessageNode();
 		ChatMessageType chatType = chatMessage.getType();
-
 		if (chatType != ChatMessageType.GAMEMESSAGE && chatType != ChatMessageType.SPAM)
 		{
 			return;
 		}
 
-		if (textMatcher != null)
+		MessageNode messageNode = chatMessage.getMessageNode();
+		String nodeValue = removeMostTags(messageNode.getValue());
+
+		for (int group : matchGroupPatterns.keySet())
 		{
-			String nodeValue = removeMostTags(messageNode.getValue());
-			Matcher matcher = textMatcher.matcher(nodeValue);
+			Matcher matcher = matchGroupPatterns.get(group).matcher(nodeValue);
 
 			if (matcher.find())
 			{
-				messageNode.setValue(recolorColorTag + nodeValue);
+				messageNode.setValue(colorGroupStrings.get(group) + nodeValue);
 				chatMessageManager.update(messageNode);
+				break;
 			}
 		}
 	}
