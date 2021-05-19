@@ -164,7 +164,7 @@ public class ForceRecolorPlugin extends Plugin
 	public void onChatMessage(ChatMessage chatMessage)
 	{
 		ChatMessageType chatType = chatMessage.getType();
-		if (chatType != ChatMessageType.GAMEMESSAGE && chatType != ChatMessageType.SPAM)
+		if (chatType != ChatMessageType.GAMEMESSAGE && chatType != ChatMessageType.SPAM && chatType != ChatMessageType.ENGINE)
 		{
 			return;
 		}
