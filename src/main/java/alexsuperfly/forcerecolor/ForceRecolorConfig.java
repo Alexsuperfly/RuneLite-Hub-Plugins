@@ -38,6 +38,16 @@ public interface ForceRecolorConfig extends Config
 	}
 
 	@ConfigItem(
+			keyName = "allMessageTypes",
+			name = "Match all message types",
+			description = "Matches against all message types, when disabled only matches game messages."
+	)
+	default boolean allMessageTypes()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		position = 2,
 		keyName = "recolorStyle",
 		name = "Recolor Style",
