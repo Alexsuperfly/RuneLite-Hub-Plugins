@@ -187,6 +187,6 @@ public class ForceRecolorPlugin extends Plugin
 
 	public static String removeMostTags(String str)
 	{
-		return TAG_REGEXP_SANS_LT_GT.matcher(str).replaceAll("");
+		return TAG_REGEXP_SANS_LT_GT.matcher(str).replaceAll("").replace('\u00A0', ' ');
 	}
 }
