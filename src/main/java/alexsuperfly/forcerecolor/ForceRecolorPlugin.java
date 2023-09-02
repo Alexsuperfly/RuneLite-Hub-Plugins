@@ -155,7 +155,7 @@ public class ForceRecolorPlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
-		int setting = client.getVar(Varbits.TRANSPARENT_CHATBOX);
+		int setting = client.getVarbitValue(Varbits.TRANSPARENT_CHATBOX);
 
 		if (transparencyVarbit != setting)
 		{
