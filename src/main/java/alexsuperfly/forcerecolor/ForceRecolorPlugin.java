@@ -9,6 +9,7 @@ import net.runelite.api.MessageNode;
 import net.runelite.api.Varbits;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -34,6 +35,9 @@ public class ForceRecolorPlugin extends Plugin
 {
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private ForceRecolorConfig config;
@@ -160,7 +164,9 @@ public class ForceRecolorPlugin extends Plugin
 		}
 	}
 
-	@Subscribe
+	// Run after ChatMessageManager and the Chat Filter plugin
+	// in case they change something/remove the message
+	@Subscribe(priority = -3)
 	public void onChatMessage(ChatMessage chatMessage)
 	{
 		ChatMessageType chatType = chatMessage.getType();
@@ -178,8 +184,15 @@ public class ForceRecolorPlugin extends Plugin
 
 			if (matcher.find())
 			{
-				messageNode.setValue(colorGroupStrings.get(group) + nodeValue);
-				chatMessageManager.update(messageNode);
+				// When the Notifier makes a new message onChatMessage gets fired
+				// before it refreshes its content and so changes would be overridden
+				// unless I set them after it finally does
+				clientThread.invokeLater(() ->
+				{
+					messageNode.setValue(colorGroupStrings.get(group) + nodeValue);
+					messageNode.setRuneLiteFormatMessage(messageNode.getValue());
+					client.refreshChat();
+				});
 				break;
 			}
 		}
