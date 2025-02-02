@@ -54,7 +54,7 @@ public class ForceRecolorPlugin extends Plugin
 		return configManager.getConfig(ForceRecolorConfig.class);
 	}
 
-	private static final Pattern TAG_REGEXP_SANS_LT_GT = Pattern.compile("<(?!lt>|gt>)[^>]*>");
+	private static final Pattern TAG_REGEXP_SANS_LT_GT_IMG = Pattern.compile("<(?!lt>|gt>|img=[0-9]+>)[^>]*>");
 
 	private int transparencyVarbit = -1;
 	private final Map<Integer, String> textGroupStrings = new HashMap<>();
@@ -200,6 +200,6 @@ public class ForceRecolorPlugin extends Plugin
 
 	public static String removeMostTags(String str)
 	{
-		return TAG_REGEXP_SANS_LT_GT.matcher(str).replaceAll("").replace('\u00A0', ' ');
+		return TAG_REGEXP_SANS_LT_GT_IMG.matcher(str).replaceAll("").replace('\u00A0', ' ');
 	}
 }
