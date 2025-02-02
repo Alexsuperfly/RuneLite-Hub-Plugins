@@ -184,12 +184,19 @@ public class ForceRecolorPlugin extends Plugin
 
 			if (matcher.find())
 			{
+				int idx = 0;
+				if (nodeValue.startsWith("CA_ID:"))
+				{
+					idx = nodeValue.indexOf('|');
+				}
 				// When the Notifier makes a new message onChatMessage gets fired
 				// before it refreshes its content and so changes would be overridden
 				// unless I set them after it finally does
+				String prefix = nodeValue.substring(0,idx);
+				String recoloredText = nodeValue.substring(idx);
 				clientThread.invokeLater(() ->
 				{
-					messageNode.setValue(colorGroupStrings.get(group) + nodeValue);
+					messageNode.setValue(prefix + colorGroupStrings.get(group) + recoloredText);
 					messageNode.setRuneLiteFormatMessage(messageNode.getValue());
 					client.refreshChat();
 				});
