@@ -176,7 +176,7 @@ public class ForceRecolorPlugin extends Plugin
 		}
 
 		MessageNode messageNode = chatMessage.getMessageNode();
-		String nodeValue = removeMostTags(messageNode.getValue());
+		String nodeValue = removeMostTags(client.macroExpand(messageNode.getValue()));
 
 		for (int group : matchGroupPatterns.keySet())
 		{
