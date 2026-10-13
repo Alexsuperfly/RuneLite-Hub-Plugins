@@ -7,10 +7,9 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.MessageNode;
 import net.runelite.api.Varbits;
-import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -24,6 +23,7 @@ import java.awt.Color;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,9 +43,6 @@ public class ForceRecolorPlugin extends Plugin
 	private ForceRecolorConfig config;
 
 	@Inject
-	private ChatMessageManager chatMessageManager;
-
-	@Inject
 	private ConfigManager configManager;
 
 	@Provides
@@ -55,17 +52,30 @@ public class ForceRecolorPlugin extends Plugin
 	}
 
 	private static final Pattern TAG_REGEXP_SANS_LT_GT_IMG = Pattern.compile("<(?!lt>|gt>|img=[0-9]+>)[^>]*>");
+	private static final Pattern COLOR_TAGS = Pattern.compile("<col=[^>]*>|</col>");
+	private static final Pattern COMBAT_TASK_PREFIX = Pattern.compile("^(?:<[^>]*>|\\s)*CA_ID:[0-9]+\\|");
 
 	private int transparencyVarbit = -1;
 	private final Map<Integer, String> textGroupStrings = new HashMap<>();
-	private final Map<Integer, Pattern> matchGroupPatterns = new HashMap<>();
+	private final Map<Integer, Pattern> matchGroupPatterns = new TreeMap<>();
 	private final Map<Integer, String> colorGroupStrings = new HashMap<>();
 
 	@Override
 	protected void startUp() throws Exception
 	{
-		updateMatchingText();
-		updateRecolorColor();
+		clientThread.invokeLater(() ->
+		{
+			transparencyVarbit = client.getVarbitValue(Varbits.TRANSPARENT_CHATBOX);
+			updateMatchingText();
+			updateRecolorColor();
+			client.refreshChat();
+		});
+	}
+
+	@Override
+	protected void shutDown()
+	{
+		clientThread.invokeLater(client::refreshChat);
 	}
 
 	private void updateMatchingText()
@@ -144,11 +154,13 @@ public class ForceRecolorPlugin extends Plugin
 		{
 			updateMatchingText();
 			updateRecolorColor();
+			clientThread.invokeLater(client::refreshChat);
 		}
 
 		if (event.getGroup().equals("textrecolor"))
 		{
 			updateRecolorColor();
+			clientThread.invokeLater(client::refreshChat);
 		}
 	}
 
@@ -161,48 +173,68 @@ public class ForceRecolorPlugin extends Plugin
 		{
 			transparencyVarbit = setting;
 			updateRecolorColor();
+			clientThread.invokeLater(client::refreshChat);
 		}
 	}
 
-	// Run after ChatMessageManager and the Chat Filter plugin
-	// in case they change something/remove the message
+	// Run after ChatMessageManager so its colors can also be overridden.
 	@Subscribe(priority = -3)
-	public void onChatMessage(ChatMessage chatMessage)
+	public void onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
-		ChatMessageType chatType = chatMessage.getType();
+		if (!"chatMessageBuilding".equals(event.getEventName()) || matchGroupPatterns.isEmpty())
+		{
+			return;
+		}
+
+		int uid = client.getIntStack()[client.getIntStackSize() - 1];
+		MessageNode messageNode = client.getMessages().get(uid);
+		if (messageNode == null)
+		{
+			return;
+		}
+
+		ChatMessageType chatType = messageNode.getType();
 		if (!config.allMessageTypes() && chatType != ChatMessageType.GAMEMESSAGE && chatType != ChatMessageType.SPAM && chatType != ChatMessageType.ENGINE)
 		{
 			return;
 		}
 
-		MessageNode messageNode = chatMessage.getMessageNode();
-		String nodeValue = removeMostTags(client.macroExpand(messageNode.getValue()));
+		Object[] objectStack = client.getObjectStack();
+		int messageIndex = client.getObjectStackSize() - 2;
+		String message = client.macroExpand((String) objectStack[messageIndex]);
+		String matchingText = removeMostTags(message.replace("<br>", " "));
 
 		for (int group : matchGroupPatterns.keySet())
 		{
-			Matcher matcher = matchGroupPatterns.get(group).matcher(nodeValue);
-
-			if (matcher.find())
+			if (matchGroupPatterns.get(group).matcher(matchingText).find())
 			{
-				int idx = 0;
-				if (nodeValue.startsWith("CA_ID:"))
-				{
-					idx = nodeValue.indexOf('|');
-				}
-				// When the Notifier makes a new message onChatMessage gets fired
-				// before it refreshes its content and so changes would be overridden
-				// unless I set them after it finally does
-				String prefix = nodeValue.substring(0,idx);
-				String recoloredText = nodeValue.substring(idx);
-				clientThread.invokeLater(() ->
-				{
-					messageNode.setValue(prefix + colorGroupStrings.get(group) + recoloredText);
-					messageNode.setRuneLiteFormatMessage(messageNode.getValue());
-					client.refreshChat();
-				});
+				// Change only the text being drawn. The stored message and RuneLite
+				// format retain the data used by quest links, task menus and plugins.
+				objectStack[messageIndex] = recolorMessage(message, colorGroupStrings.get(group));
 				break;
 			}
 		}
+	}
+
+	static String recolorMessage(String message, String colorTag)
+	{
+		String text = COLOR_TAGS.matcher(message).replaceAll("");
+		int prefixEnd = 0;
+		Matcher combatTask = COMBAT_TASK_PREFIX.matcher(text);
+		if (combatTask.find())
+		{
+			// Keep the control prefix before the color, including icons and the
+			// delimiter. The game splits this into metadata and display text.
+			prefixEnd = combatTask.end();
+		}
+		else if (text.startsWith("|"))
+		{
+			// Group Ironman chat uses a leading delimiter too.
+			prefixEnd = 1;
+		}
+		String color = colorTag == null ? "" : colorTag;
+		return text.substring(0, prefixEnd) + color
+			+ text.substring(prefixEnd).replace("<br>", "<br>" + color);
 	}
 
 	public static String removeMostTags(String str)

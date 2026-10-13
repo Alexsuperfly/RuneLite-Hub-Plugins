@@ -22,6 +22,7 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
 	testImplementation 'junit:junit:4.12'
+	testImplementation 'org.mockito:mockito-core:4.11.0'
 	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion
 	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion
 }
@@ -31,6 +32,13 @@ group = 'alexsuperfly.forcerecolor'
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
 	options.release.set(11)
+}
+
+tasks.register('run', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'alexsuperfly.forcerecolor.ForceRecolorPluginTest'
+	enableAssertions = true
+	args '--developer-mode'
 }
 
 tasks.register('shadowJar', Jar) {
