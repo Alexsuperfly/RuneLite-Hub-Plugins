@@ -49,6 +49,17 @@ public interface ForceRecolorConfig extends Config
 
 	@ConfigItem(
 		position = 2,
+		keyName = "overheadText",
+		name = "Color overhead text",
+		description = "Colors matching overhead text."
+	)
+	default OverheadTextTarget overheadText()
+	{
+		return OverheadTextTarget.NONE;
+	}
+
+	@ConfigItem(
+		position = 3,
 		keyName = "recolorStyle",
 		name = "Recolor Style",
 		description = "What should be used to recolor the matched message."
@@ -59,7 +70,7 @@ public interface ForceRecolorConfig extends Config
 	}
 
 	@ConfigItem(
-		position = 3,
+		position = 4,
 		keyName = "opaqueRecolor",
 		name = "Opaque Recolor",
 		description = "The default recolor color for the opaque chatbox."
@@ -67,7 +78,7 @@ public interface ForceRecolorConfig extends Config
 	Color opaqueRecolor();
 
 	@ConfigItem(
-		position = 4,
+		position = 5,
 		keyName = "transparentRecolor",
 		name = "Transparent Recolor",
 		description = "The default recolor color for the transparent chatbox."

@@ -7,10 +7,10 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.MessageNode;
 import net.runelite.api.Varbits;
-import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.OverheadTextChanged;
+import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -43,9 +43,6 @@ public class ForceRecolorPlugin extends Plugin
 	private ForceRecolorConfig config;
 
 	@Inject
-	private ChatMessageManager chatMessageManager;
-
-	@Inject
 	private ConfigManager configManager;
 
 	@Provides
@@ -54,7 +51,7 @@ public class ForceRecolorPlugin extends Plugin
 		return configManager.getConfig(ForceRecolorConfig.class);
 	}
 
-	private static final Pattern TAG_REGEXP_SANS_LT_GT_IMG_STR_INT = Pattern.compile("<(?!lt>|gt>|img=[0-9]+>|str_|int_)[^>]*>");
+	private static final Pattern COL_TAG_REGEXP = Pattern.compile("</?col(?:=[^>]*)?>");
 
 	private int transparencyVarbit = -1;
 	private final Map<Integer, String> textGroupStrings = new HashMap<>();
@@ -66,6 +63,13 @@ public class ForceRecolorPlugin extends Plugin
 	{
 		updateMatchingText();
 		updateRecolorColor();
+		clientThread.invokeLater(client::refreshChat);
+	}
+
+	@Override
+	protected void shutDown() throws Exception
+	{
+		clientThread.invokeLater(client::refreshChat);
 	}
 
 	private void updateMatchingText()
@@ -144,11 +148,13 @@ public class ForceRecolorPlugin extends Plugin
 		{
 			updateMatchingText();
 			updateRecolorColor();
+			clientThread.invokeLater(client::refreshChat);
 		}
 
 		if (event.getGroup().equals("textrecolor"))
 		{
 			updateRecolorColor();
+			clientThread.invokeLater(client::refreshChat);
 		}
 	}
 
@@ -167,46 +173,87 @@ public class ForceRecolorPlugin extends Plugin
 	// Run after ChatMessageManager and the Chat Filter plugin
 	// in case they change something/remove the message
 	@Subscribe(priority = -3)
-	public void onChatMessage(ChatMessage chatMessage)
+	public void onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
-		ChatMessageType chatType = chatMessage.getType();
+		if (!"chatMessageBuilding".equals(event.getEventName()))
+		{
+			return;
+		}
+
+		final int[] intStack = client.getIntStack();
+		final Object[] objectStack = client.getObjectStack();
+		final int isize = client.getIntStackSize();
+		final int osize = client.getObjectStackSize();
+		final int uid = intStack[isize - 1];
+
+		final MessageNode messageNode = client.getMessages().get(uid);
+		if (messageNode == null)
+		{
+			return;
+		}
+
+		final ChatMessageType chatType = messageNode.getType();
 		if (!config.allMessageTypes() && chatType != ChatMessageType.GAMEMESSAGE && chatType != ChatMessageType.SPAM && chatType != ChatMessageType.ENGINE)
 		{
 			return;
 		}
 
-		MessageNode messageNode = chatMessage.getMessageNode();
-		String nodeValue = removeMostTags(client.macroExpand(messageNode.getValue()));
+		final String message = removeColorTags(client.macroExpand((String) objectStack[osize - 2]));
+		final String matchText = Text.removeFormattingTags(message).replace('\u00A0', ' ');
 
 		for (int group : matchGroupPatterns.keySet())
 		{
-			Matcher matcher = matchGroupPatterns.get(group).matcher(nodeValue);
+			Matcher matcher = matchGroupPatterns.get(group).matcher(matchText);
 
 			if (matcher.find())
 			{
-				int idx = 0;
-				if (nodeValue.startsWith("CA_ID:"))
+				// Used [proc,rebuildchatbox] and [proc,script632] as reference
+				int idx = message.indexOf("CA_ID:");
+				if (idx != -1)
 				{
-					idx = nodeValue.indexOf('|');
+					idx = message.indexOf('|', idx) + 1;
 				}
-				// When the Notifier makes a new message onChatMessage gets fired
-				// before it refreshes its content and so changes would be overridden
-				// unless I set them after it finally does
-				String prefix = nodeValue.substring(0,idx);
-				String recoloredText = nodeValue.substring(idx);
-				clientThread.invokeLater(() ->
+				else if (message.startsWith("|"))
 				{
-					messageNode.setValue(prefix + colorGroupStrings.get(group) + recoloredText);
-					messageNode.setRuneLiteFormatMessage(messageNode.getValue());
-					client.refreshChat();
-				});
+					idx = 1;
+				}
+				else if (message.startsWith("p|"))
+				{
+					idx = 2;
+				}
+				else
+				{
+					idx = 0;
+				}
+
+				objectStack[osize - 2] = message.substring(0, idx) + colorGroupStrings.get(group) + message.substring(idx);
 				break;
 			}
 		}
 	}
 
-	public static String removeMostTags(String str)
+	@Subscribe
+	public void onOverheadTextChanged(OverheadTextChanged event)
 	{
-		return TAG_REGEXP_SANS_LT_GT_IMG_STR_INT.matcher(str).replaceAll("").replace('\u00A0', ' ');
+		if (!config.overheadText().matches(event.getActor()))
+		{
+			return;
+		}
+
+		final String text = event.getOverheadText();
+
+		for (int group : matchGroupPatterns.keySet())
+		{
+			if (matchGroupPatterns.get(group).matcher(text).find())
+			{
+				event.getActor().setOverheadText(colorGroupStrings.get(group) + text);
+				break;
+			}
+		}
+	}
+
+	public static String removeColorTags(String str)
+	{
+		return COL_TAG_REGEXP.matcher(str).replaceAll("");
 	}
 }
